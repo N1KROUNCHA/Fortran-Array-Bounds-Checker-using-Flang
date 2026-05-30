@@ -72,7 +72,7 @@ app.get('/api/tests/:id', (req, res) => {
         return res.status(400).json({ error: 'Invalid test case ID' });
     }
 
-    const testPath = path.resolve(__dirname, '../tests', filename);
+    const testPath = path.resolve(__dirname, '../testcases', filename);
     fs.readFile(testPath, 'utf8', (err, data) => {
         if (err) {
             console.error(`Error reading test file ${filename}:`, err);
