@@ -1,0 +1,13 @@
+{
+  "name": "flang-bounds-checker-frontend",
+  "version": "1.0.0",
+  "description": "Visual frontend for Fortran Array Bounds Checker",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}

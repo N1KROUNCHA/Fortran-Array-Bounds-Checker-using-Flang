@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fortran Array Bounds Checker — Flang Semantic Pass Visualizer</title>
+    <meta name="description" content="Interactive Flang semantic analysis visualizer showing parse tree, symbol table, constant propagation and diagnostics for Fortran array bounds checking.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app-container">
+    <!-- HEADER -->
+    <header class="app-header">
+        <div class="header-logo-section">
+            <div class="header-icon">
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+            </div>
+            <div class="header-titles">
+                <h1>Fortran Array Bounds Checker</h1>
+                <p class="subtitle">Assignment 9 — Flang Semantic Analysis, Parse Tree &amp; Bounds Visualizer</p>
+            </div>
+        </div>
+        <div class="header-controls">
+            <div id="backend-status" class="status-badge offline">
+                <span class="status-dot"></span>
+                <span class="status-text">Backend Offline</span>
+            </div>
+            <a class="docs-btn" href="https://github.com/llvm/llvm-project/tree/main/flang" target="_blank" rel="noopener">Flang Docs ↗</a>
+        </div>
+    </header>
+
+    <!-- MAIN: editor left + visualizer right -->
+    <main class="app-main">
+        <!-- LEFT: CODE EDITOR -->
+        <section class="panel editor-panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    <h2>Fortran Source</h2>
+                </div>
+                <div class="template-selector-container">
+                    <label for="template-select">Test Case:</label>
+                    <select id="template-select">
+                        <option value="test01_constant_oob" selected>Test 1 — Constant OOB</option>
+                        <option value="test02_variable_index">Test 2 — Variable Indices</option>
+                        <option value="test03_correct_usage">Test 3 — Correct Usage</option>
+                        <option value="test04_mixed">Test 4 — Mixed</option>
+                        <option value="test05_const_expr">Test 5 — Const Expressions</option>
+                        <option value="custom">Custom Code…</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="editor-container">
+                <div class="editor-gutter" id="editor-gutter"></div>
+                <div class="editor-textarea-wrapper">
+                    <textarea id="code-input" spellcheck="false" placeholder="! Enter Fortran code here..."></textarea>
+                    <pre class="editor-highlight" id="editor-highlight"><code id="highlight-content"></code></pre>
+                </div>
+            </div>
+
+            <div class="editor-actions">
+                <button id="btn-simulate" class="btn btn-primary">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Simulate Pass
+                </button>
+                <button id="btn-run-live" class="btn btn-secondary">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    Run Live Plugin
+                </button>
+                <button id="btn-clear" class="btn btn-tertiary">Reset</button>
+            </div>
+        </section>
+
+        <!-- RIGHT: VISUALIZER -->
+        <section class="panel visualizer-panel">
+            <!-- PHASE TABS -->
+            <div class="panel-header viz-header">
+                <div class="panel-title">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    <h2>Pipeline Visualizer</h2>
+                </div>
+                <div class="phase-tabs" id="phase-tabs">
+                    <button class="phase-tab active" data-phase="parse">🌳 Parse Tree</button>
+                    <button class="phase-tab" data-phase="symbols">📋 Symbols</button>
+                    <button class="phase-tab" data-phase="intercept">🎯 Intercept</button>
+                    <button class="phase-tab" data-phase="propagate">⚡ Propagate</button>
+                    <button class="phase-tab" data-phase="diag">🔴 Diagnostics</button>
+                    <button class="phase-tab" data-phase="comparison">📊 Flang vs gfortran</button>
+                </div>
+            </div>
+
+            <!-- FLANG PIPELINE MINI-FLOWCHART -->
+            <div class="flang-flowchart-container">
+                <div class="flowchart-step active" id="flow-parse">
+                    <div class="flow-icon"><svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+                    <div class="flow-text"><span class="flow-label">Parse Tree</span><span class="flow-sub">AST Build</span></div>
+                </div>
+                <div class="flow-connector" id="conn-1">→</div>
+                <div class="flowchart-step" id="flow-symbol">
+                    <div class="flow-icon"><svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/></svg></div>
+                    <div class="flow-text"><span class="flow-label">Symbols (a)</span><span class="flow-sub">Collect Bounds</span></div>
+                </div>
+                <div class="flow-connector" id="conn-2">→</div>
+                <div class="flowchart-step" id="flow-intercept">
+                    <div class="flow-icon"><svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M2 12h4M18 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg></div>
+                    <div class="flow-text"><span class="flow-label">Intercept (b)</span><span class="flow-sub">Subscripts</span></div>
+                </div>
+                <div class="flow-connector" id="conn-3">→</div>
+                <div class="flowchart-step" id="flow-folding">
+                    <div class="flow-icon"><svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></div>
+                    <div class="flow-text"><span class="flow-label">Propagate (c)</span><span class="flow-sub">Fold Constants</span></div>
+                </div>
+                <div class="flow-connector" id="conn-4">→</div>
+                <div class="flowchart-step" id="flow-diagnostic">
+                    <div class="flow-icon"><svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg></div>
+                    <div class="flow-text"><span class="flow-label">Emit (d)</span><span class="flow-sub">Diagnostics</span></div>
+                </div>
+            </div>
+
+            <!-- PHASE CONTENT PANELS -->
+            <div class="pipeline-viewports">
+
+                <!-- ── PARSE TREE ── -->
+                <div class="pipeline-section active" id="sec-parse">
+                    <div class="section-meta">
+                        <h3>Flang Parse Tree — Abstract Syntax Tree (AST)</h3>
+                        <span class="desc">Flang parses Fortran source into a typed parse tree. Each node corresponds to a grammar rule. The bounds checker hooks into this tree during semantic analysis.</span>
+                    </div>
+                    <div class="parse-tree-toolbar">
+                        <button class="tree-btn" id="btn-expand-all">Expand All</button>
+                        <button class="tree-btn" id="btn-collapse-all">Collapse All</button>
+                        <div class="tree-legend">
+                            <span class="legend-item"><span class="leg-dot prog"></span>Program</span>
+                            <span class="legend-item"><span class="leg-dot decl"></span>Declaration</span>
+                            <span class="legend-item"><span class="leg-dot access"></span>Array Access</span>
+                            <span class="legend-item"><span class="leg-dot oob"></span>OOB Error</span>
+                            <span class="legend-item"><span class="leg-dot warn"></span>Warning</span>
+                        </div>
+                    </div>
+                    <div class="parse-tree-wrapper" id="parse-tree-wrapper">
+                        <div class="tree-empty-state" id="tree-empty">
+                            <svg viewBox="0 0 64 64" width="48" height="48" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.3"><circle cx="32" cy="12" r="8"/><circle cx="12" cy="44" r="8"/><circle cx="32" cy="44" r="8"/><circle cx="52" cy="44" r="8"/><line x1="32" y1="20" x2="12" y2="36"/><line x1="32" y1="20" x2="32" y2="36"/><line x1="32" y1="20" x2="52" y2="36"/></svg>
+                            <p>Click <strong>Simulate Pass</strong> to build the parse tree</p>
+                        </div>
+                        <svg id="parse-tree-svg" class="parse-tree-svg" style="display:none;"></svg>
+                    </div>
+                </div>
+
+                <!-- ── SYMBOL TABLE ── -->
+                <div class="pipeline-section" id="sec-symbols">
+                    <div class="section-meta">
+                        <h3>Phase 1: Symbol Table Construction (Objective a)</h3>
+                        <span class="desc">Walks Flang's <code>ObjectEntityDetails</code> to extract array shape specs — each dimension's lower and upper bounds.</span>
+                    </div>
+                    <div class="symbol-table-wrapper">
+                        <table class="symbol-table" id="symbol-table">
+                            <thead>
+                                <tr><th>Array</th><th>Dims</th><th>Lower</th><th>Upper</th><th>Line</th></tr>
+                            </thead>
+                            <tbody id="symbol-table-body">
+                                <tr><td colspan="5" class="empty-state">Run analysis to populate.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ── INTERCEPT ── -->
+                <div class="pipeline-section" id="sec-intercept">
+                    <div class="section-meta">
+                        <h3>Phase 2: Subscript Interception (Objective b)</h3>
+                        <span class="desc">Flang's <code>CheckHelper::Enter(ArrayElement&amp;)</code> fires for every array access. The checker captures subscript tokens for evaluation.</span>
+                    </div>
+                    <div class="accesses-grid" id="accesses-grid-p2">
+                        <div class="empty-state">No array subscripts intercepted yet.</div>
+                    </div>
+                </div>
+
+                <!-- ── PROPAGATE ── -->
+                <div class="pipeline-section" id="sec-propagate">
+                    <div class="section-meta">
+                        <h3>Phase 3: Constant Propagation (Objective c)</h3>
+                        <span class="desc">Each subscript is walked as an <code>Expr</code> variant. Integer literals fold immediately; binary ops like <code>5+6</code> fold to <code>11</code>. Variables are flagged unresolved.</span>
+                    </div>
+                    <div class="accesses-grid" id="accesses-grid-p3">
+                        <div class="empty-state">No constant propagation steps completed yet.</div>
+                    </div>
+                </div>
+
+                <!-- ── DIAGNOSTICS ── -->
+                <div class="pipeline-section" id="sec-diag">
+                    <div class="section-meta">
+                        <h3>Phase 4: Diagnostics Emission (Objective d)</h3>
+                        <span class="desc"><code>SemanticsContext::Say()</code> emits <strong>errors</strong> for provably out-of-bounds accesses and <strong>warnings</strong> when variable indices cannot be verified statically.</span>
+                    </div>
+
+                    <div class="diagnostics-summary">
+                        <div class="stat-card"><div class="stat-num error-text" id="stat-errors">0</div><div class="stat-label">Errors (OOB)</div></div>
+                        <div class="stat-card"><div class="stat-num warning-text" id="stat-warnings">0</div><div class="stat-label">Warnings (Var)</div></div>
+                        <div class="stat-card"><div class="stat-num safe-text" id="stat-safe">0</div><div class="stat-label">Verified Safe</div></div>
+                        <div class="stat-card"><div class="stat-num rate-text" id="stat-rate">0%</div><div class="stat-label">Catch Rate</div></div>
+                    </div>
+
+                    <div class="terminal-container">
+                        <div class="terminal-header">
+                            <span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
+                            <span class="term-title">flang-new -fc1 -plugin bounds-checker</span>
+                        </div>
+                        <pre class="terminal-body" id="terminal-output">Ready. Press "Simulate Pass" or "Run Live Plugin"…</pre>
+                    </div>
+                </div>
+
+                <!-- ── FLANG PLUGIN vs GFORTRAN COMPARISON ── -->
+                <div class="pipeline-section" id="sec-comparison">
+                    <div class="section-meta">
+                        <h3>📊 Flang Bounds-Checker Plugin vs gfortran <code>-fbounds-check</code></h3>
+                        <span class="desc">Both tools work on <strong>Fortran</strong> source. The key difference: Flang's plugin catches violations <strong>at compile time</strong> (zero runtime cost), while gfortran inserts <strong>runtime guards</strong> that fire when the program executes.</span>
+                    </div>
+
+                    <div class="comparison-grid">
+                        <!-- Key Comparison Matrix -->
+                        <div class="comparison-card comp-table-card">
+                            <h4>Fortran Bounds-Checking Strategy Comparison</h4>
+                            <div class="comp-table-wrapper">
+                                <table class="comp-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Feature</th>
+                                            <th>Flang Plugin (This Project)</th>
+                                            <th>gfortran <code>-fbounds-check</code></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><strong>When it catches OOB</strong></td>
+                                            <td class="fortran-col">🕐 Compile time — before the program runs</td>
+                                            <td class="clang-col">⚡ Runtime — when the bad access actually executes</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Mechanism</strong></td>
+                                            <td class="fortran-col">Hooks into Flang semantic pass via <code>CheckHelper::Enter(ArrayElement&amp;)</code></td>
+                                            <td class="clang-col">Inserts branch + trap instructions around every array subscript in the binary</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Constant index (e.g. A(11))</strong></td>
+                                            <td class="fortran-col">✅ <strong>Error</strong> — folded and checked at compile time</td>
+                                            <td class="clang-col">✅ Caught at runtime (wastes a branch that could have been compile-time)</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Variable index (e.g. A(i))</strong></td>
+                                            <td class="fortran-col">⚠️ <strong>Warning</strong> — cannot verify statically</td>
+                                            <td class="clang-col">✅ Checked at runtime (with overhead per access)</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Constant expression (e.g. A(5+6))</strong></td>
+                                            <td class="fortran-col">✅ Folds <code>5+6 → 11</code>, emits <strong>Error</strong> at compile time</td>
+                                            <td class="clang-col">✅ Caught at runtime after fold</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Arbitrary bounds (e.g. B(-5:5))</strong></td>
+                                            <td class="fortran-col">✅ Fully supported — lower/upper both checked</td>
+                                            <td class="clang-col">✅ Fully supported at runtime</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Runtime performance overhead</strong></td>
+                                            <td class="fortran-col">🟢 <strong>Zero</strong> — all analysis at compile time</td>
+                                            <td class="clang-col">🔴 Significant — every access pays a branch cost</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Report format</strong></td>
+                                            <td class="fortran-col"><code>error:</code> / <code>warning:</code> in compiler output</td>
+                                            <td class="clang-col"><code>Fortran runtime error: Array bound mismatch</code> on stderr</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Side-by-side code for selected access -->
+                        <div class="comparison-card comp-translation-card">
+                            <h4>Per-Access Analysis: Flang Plugin vs gfortran Guard</h4>
+                            <p class="comp-help">Select an intercepted array access to see how each tool handles it for the same Fortran source:</p>
+                            <div class="comp-select-wrapper">
+                                <select id="comp-access-select" class="comp-select">
+                                    <option value="">Run simulation first...</option>
+                                </select>
+                            </div>
+
+                            <div class="comp-panels-side">
+                                <!-- Flang Plugin side -->
+                                <div class="comp-side">
+                                    <h5>🔵 Flang Plugin — Compile-Time Check</h5>
+                                    <div class="comp-code-bubble fortran-bubble">
+                                        <code id="comp-flang-code">REAL A(10)
+A(0) = 99.0
+! flang: error: index 0 &lt; lbound 1</code>
+                                    </div>
+                                    <div class="mini-ast-wrapper">
+                                        <h6>Flang AST: ArrayElement node</h6>
+                                        <svg id="flang-mini-ast" class="mini-ast-svg"></svg>
+                                    </div>
+                                </div>
+
+                                <!-- gfortran side -->
+                                <div class="comp-side">
+                                    <h5>🟠 gfortran -fbounds-check — Runtime Guard</h5>
+                                    <div class="comp-code-bubble clang-bubble">
+                                        <code id="comp-clang-code">REAL A(10)
+A(0) = 99.0
+! At runtime:
+! Fortran runtime error:
+!  Array bound mismatch</code>
+                                    </div>
+                                    <div class="mini-ast-wrapper">
+                                        <h6>gfortran: Runtime guard inserted</h6>
+                                        <svg id="clang-mini-ast" class="mini-ast-svg"></svg>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- /pipeline-viewports -->
+        </section>
+    </main>
+</div>
+
+<!-- Simulation status banner -->
+<div id="sim-status-banner" class="sim-status-banner hidden">
+    <div class="banner-spinner"></div>
+    <span id="sim-banner-text">Simulating…</span>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

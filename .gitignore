@@ -1,0 +1,14 @@
+# Compiled binary
+bounds-checker
+
+# Dependency directories
+node_modules/
+**/node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
